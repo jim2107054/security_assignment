@@ -58,14 +58,6 @@
 
 \begin{document}
 
-% --- Clean Academic Title Block ---
-\begin{center}
-    {\huge\textbf{DoS and DDoS Simulation on a Local Web Server}}\\[0.25cm]
-    {\large\textbf{Computer Security Coursework Report}}\\[0.4cm]
-    \rule{\textwidth}{0.8pt}
-\end{center}
-\vspace{-0.2cm}
-
 \tableofcontents
 \newpage
 
@@ -329,76 +321,29 @@ This project successfully demonstrated a controlled DoS and simulated DDoS avail
 
 \newpage
 \appendix
-\section{Viva Voce Examination Preparation Guide}
+\section{Project Files}
+The complete project repository is available on GitHub at: \url{https://github.com/jim2107054/security_assignment}.
 
-\begin{enumerate}[leftmargin=*]
-    \item \textbf{What is the difference between DoS and DDoS?} \\
-    \textit{Ans:} DoS originates from a single source; DDoS originates from multiple distributed sources, making IP-based filtering much harder.
+The codebase is organized into two dedicated directories: \texttt{code/} for all executable artifacts and \texttt{report/} for documentation and experimental evidence.
 
-    \item \textbf{Why does server capacity matter?} \\
-    \textit{Ans:} Computational resources (worker threads, CPU, memory) are finite. When arrival rate exceeds capacity ($\lambda > \mu$), queues overflow and requests are rejected.
-
-    \item \textbf{Why did we measure a baseline first?} \\
-    \textit{Ans:} To establish normal operating performance under healthy conditions (100\% success rate) as a scientific control group.
-
-    \item \textbf{What does HTTP 503 mean in this experiment?} \\
-    \textit{Ans:} HTTP 503 Service Unavailable indicates that all 4 concurrency slots were occupied, so the server deliberately rejected excess requests safely.
-
-    \item \textbf{Why is our localhost DDoS considered an educational simulation?} \\
-    \textit{Ans:} Real DDoS attacks originate from distributed internet hosts across distinct public IPs. On localhost, separate OS worker processes simulate multiple sources safely.
-
-    \item \textbf{What resources can a real DoS/DDoS attack exhaust?} \\
-    \textit{Ans:} Network bandwidth, socket tables, TCP connection limits, CPU time, memory buffers, and database connection pools.
-
-    \item \textbf{How can an enterprise web server defend against request floods?} \\
-    \textit{Ans:} Using rate limiting, reverse proxies, in-memory caching, load balancing, Anycast CDNs, and WAF traffic scrubbing.
-
-    \item \textbf{Why must testing be restricted to systems you own or have permission to test?} \\
-    \textit{Ans:} Launching unauthorized attacks against external systems is illegal, unethical, and punishable under cybercrime laws. Localhost ensures complete safety.
-\end{enumerate}
-
-\section{Project Source Code Listings}
-
-\subsection{Target Web Server (\texttt{code/server.py})}
-\begin{lstlisting}[language=Python]
-from flask import Flask, jsonify, render_template_string
-import threading, time
-
-app = Flask(__name__)
-CAPACITY = 4
-PROCESSING_TIME = 0.25
-
-slots = threading.BoundedSemaphore(CAPACITY)
-stats = {"accepted": 0, "rejected": 0, "health_checks": 0}
-lock = threading.Lock()
-
-@app.route("/health", methods=["GET"])
-def health():
-    acquired = slots.acquire(blocking=False)
-    if not acquired:
-        with lock: stats["rejected"] += 1
-        return jsonify({"status": "busy", "message": "Server capacity full"}), 503
-    try:
-        with lock: stats["health_checks"] += 1
-        return jsonify({"status": "ok", "message": "Server is healthy"}), 200
-    finally:
-        slots.release()
-
-@app.route("/work", methods=["GET"])
-def work():
-    acquired = slots.acquire(blocking=False)
-    if not acquired:
-        with lock: stats["rejected"] += 1
-        return jsonify({"status": "busy", "message": "Server capacity full"}), 503
-    try:
-        time.sleep(PROCESSING_TIME)
-        with lock: stats["accepted"] += 1
-        return jsonify({"status": "ok", "message": "Request processed"}), 200
-    finally:
-        slots.release()
-
-if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, threaded=True)
-\end{lstlisting}
+\begin{table}[H]
+\centering
+\small
+\caption{Summary of project files and their architectural responsibilities}
+\label{tab:project_files}
+\begin{tabularx}{\textwidth}{p{4.0cm}X}
+\toprule
+\textbf{File / Directory} & \textbf{Purpose} \\
+\midrule
+\texttt{code/server.py} & Multithreaded Flask HTTP server, bounded worker capacity accounting ($C=4$), endpoint routing (\texttt{/}, \texttt{/health}, \texttt{/work}, \texttt{/stats}), overload handling (HTTP 503), and embedded browser interface. \\
+\texttt{code/baseline.py} & Stage A baseline traffic generator, sending calibrated sequential requests to record healthy operational latency and control metrics. \\
+\texttt{code/client.py} & Stage B single-source DoS traffic simulation using concurrent worker threads to rapidly saturate server slots. \\
+\texttt{code/ddos\_sim.py} & Stage C multi-process DDoS bot cluster simulation spawning independent worker processes to generate aggregate flood traffic. \\
+\texttt{code/requirements.txt} & Portable dependency declarations (\texttt{Flask}, \texttt{requests}) ensuring seamless cross-platform execution. \\
+\texttt{code/README.md} & Step-by-step execution, testing workflows, demonstration steps, and experimental safety guidelines. \\
+\texttt{report/} & High-resolution browser UI evidence, terminal execution logs, LaTeX source, and compiled academic report PDF. \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \end{document}

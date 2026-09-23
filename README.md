@@ -1,5 +1,7 @@
 # Security Lab Assignment: Controlled DoS & DDoS Simulation
 
+**GitHub Repository**: [https://github.com/jim2107054/security_assignment](https://github.com/jim2107054/security_assignment)
+
 ## Folder Structure
 - `code/`: Contains all simulation source code and dependencies.
   - `requirements.txt`: Python package requirements.
