@@ -52,7 +52,7 @@
 % --- Header & Footer ---
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{\textbf{Security Lab Report}}
+\rhead{\textbf{Security Assignment Report}}
 \lhead{Controlled DoS \& DDoS Simulation}
 \rfoot{Page \thepage}
 
@@ -67,7 +67,7 @@ Denial-of-Service (DoS) and Distributed Denial-of-Service (DDoS) attacks aim to 
 This assignment implements a safe local demonstration in Python using a multithreaded Flask HTTP server and controlled traffic generators. A web browser acts as the legitimate user client. During normal operation, the user can load the website and request a health check. During an experiment, the traffic generator repeatedly requests a deliberately expensive endpoint (\texttt{/work}) until all available server workers are occupied ($C = 4$). A legitimate browser request to \texttt{/health} then receives HTTP status 503 Service Unavailable. When the generated traffic stops, the server recovers and becomes available again.
 
 \subsection{Objectives}
-The primary objectives of this laboratory assignment are:
+The primary objectives of this assignment are:
 \begin{itemize}[leftmargin=*]
     \item Implement a basic multithreaded HTTP server with bounded concurrency capacity.
     \item Model finite server capacity using a maximum number of active worker slots ($C = 4$).
@@ -99,7 +99,7 @@ A DoS attack originates from one system or one logical source, generating suffic
 \end{tabularx}
 \end{table}
 
-\noindent\textbf{Local Simulation Boundary Note:} Because every component runs on one computer, the DDoS sources do not have different network IP addresses. They are virtual bot identities created by separate Python worker processes. This accurately demonstrates distributed application-level demand within the lab safely without requiring external network floods.
+\noindent\textbf{Local Simulation Boundary Note:} Because every component runs on one computer, the DDoS sources do not have different network IP addresses. They are virtual bot identities created by separate Python worker processes. This accurately demonstrates distributed application-level demand within the assignment simulation safely without requiring external network floods.
 
 \section{System Design}
 The experiment contains four visible components:
