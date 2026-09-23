@@ -319,7 +319,6 @@ To defend production systems against application-layer floods:
 \section{Conclusion}
 This project successfully demonstrated a controlled DoS and simulated DDoS availability experiment in Python. The Flask server provides an interactive website, a health check endpoint, and an expensive work endpoint. Bounded semaphore accounting limits the server to 4 simultaneous workers and delivers clear HTTP 503 responses when capacity is exhausted. Both DoS and DDoS attack scenarios saturated the server and produced visible denial of service to a legitimate browser user. The system recovered immediately when attack traffic stopped, demonstrating the core mechanics of availability security.
 
-\newpage
 \appendix
 \section{Project Files}
 The complete project repository is available on GitHub at: \url{https://github.com/jim2107054/security_assignment}.
