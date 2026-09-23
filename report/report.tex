@@ -1,8 +1,10 @@
 \documentclass[11pt,a4paper]{article}
 
+% --- Packages ---
 \usepackage[utf8]{inputenc}
 \usepackage[margin=1in,headheight=14.5pt]{geometry}
 \usepackage{amsmath,amssymb}
+\usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{xcolor}
@@ -10,15 +12,19 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning}
 \usepackage{float}
+\usepackage{caption}
 \usepackage{fancyhdr}
 \usepackage{enumitem}
 
+% --- Hyperlink Setup ---
 \hypersetup{
     colorlinks=true,
     linkcolor=blue!80!black,
+    citecolor=blue!80!black,
     urlcolor=teal!80!black
 }
 
+% --- Code Listings Styling ---
 \definecolor{codegreen}{rgb}{0,0.6,0}
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
 \definecolor{codepurple}{rgb}{0.58,0,0.82}
@@ -42,15 +48,18 @@
 }
 \lstset{style=mystyle}
 
+% --- Header & Footer ---
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{\textbf{Security Lab Report}}
+\rhead{\textbf{Computer Security Lab Report}}
 \lhead{Controlled DoS \& DDoS Simulation}
 \rfoot{Page \thepage}
 
+% --- Document Information ---
 \title{\vspace{-1.5cm}
-    \textbf{\Large Security Lab Assignment Report}\\[0.3cm]
-    \textbf{\LARGE Controlled DoS and DDoS Simulation on a Local Web Server}
+    \textbf{\Large Computer Security Laboratory Assignment}\\[0.3cm]
+    \textbf{\LARGE Controlled DoS and DDoS Simulation on a Local Web Server}\\[0.2cm]
+    \large An Application-Layer Availability and Resource Exhaustion Demonstration
 }
 \author{\textbf{Coursework Submission} \\ Department of Computer Science \& Engineering}
 \date{\today}
@@ -59,200 +68,347 @@
 
 \maketitle
 
-\section{Objective}
-To understand the working principle of Denial of Service (DoS) and Distributed Denial of Service (DDoS) attacks and demonstrate service degradation in a controlled localhost environment.
+\begin{abstract}
+Denial of Service (DoS) and Distributed Denial of Service (DDoS) attacks aim to diminish the availability of a service by exhausting finite resources required by legitimate users. These critical resources include worker threads, memory buffers, CPU time, and application concurrency slots. This laboratory experiment presents a safe, local, and reproducible demonstration implemented in Python using a multithreaded Flask HTTP server and controlled traffic generators. A web browser acts as the legitimate user client. Under baseline conditions, the user interacts smoothly with the web interface and executes health checks. During an attack scenario, the traffic generator dispatches rapid requests to an expensive workload endpoint (\texttt{/work}) until all active worker slots ($C = 4$) are occupied. Subsequent legitimate browser probes to \texttt{/health} encounter immediate HTTP 503 Service Unavailable responses. Upon stopping the attack stream, the server promptly recovers to normal operating capacity. Quantitative metrics, interactive browser UI screenshots, and defensive countermeasures are presented.
+\end{abstract}
 
-\section{Theory}
-\begin{itemize}[leftmargin=*]
-    \item \textbf{DoS (Denial of Service):} An attack aimed at making a service unavailable or degraded for legitimate users by exhausting server resources such as CPU, memory, connection slots, worker threads, or application capacity.
-    \item \textbf{DDoS (Distributed Denial of Service):} An attack sharing the same availability-exhaustion goal, but where traffic originates from multiple distributed sources. In this laboratory environment, several independent local operating system worker processes simulate this distributed multi-source behavior safely.
-    \item \textbf{Resource Exhaustion \& Server Capacity:} Web servers have finite concurrency capacity ($C$). If the request arrival rate ($\lambda$) exceeds the processing rate ($\mu$), an internal queue forms, response latency rises, and excess requests are dropped or rejected (HTTP 503).
-    \item \textbf{Latency \& Availability:} Availability is measured by the percentage of successful responses (HTTP 200) versus rejected/dropped responses (HTTP 503) under varying traffic loads.
-\end{itemize}
+\vspace{0.2cm}
+\tableofcontents
+\newpage
 
-\subsection{Conceptual Topology}
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-    box/.style={draw, rectangle, rounded corners, fill=blue!10, minimum height=1cm, minimum width=3cm, align=center, font=\small},
-    server/.style={draw, rectangle, rounded corners, fill=green!15, minimum height=1.2cm, minimum width=3.8cm, align=center, font=\small\bfseries},
-    arrow/.style={-{Stealth[length=3mm]}, thick}
-]
+\section{Introduction}
+Denial-of-Service (DoS) and Distributed Denial-of-Service (DDoS) attacks represent fundamental threats to the availability pillar of the CIA (Confidentiality, Integrity, and Availability) security triad. By flooding a target with excessive connection requests or computationally demanding tasks, adversaries exhaust finite hardware or application-layer capacities. The visible outcome is elevated latency, connection timeouts, rejected requests (HTTP status 503), or total service outages.
 
-\node[box] (normal) at (0, 2.2) {\textbf{Normal Client}\\\footnotesize Legitimate small request rate};
-\node[box, fill=orange!15] (dos) at (0, 0) {\textbf{DoS Simulator}\\\footnotesize One local generator, increased rate};
-\node[box, fill=red!15] (ddos) at (0, -2.2) {\textbf{DDoS Simulation}\\\footnotesize 3--5 independent local workers};
+This assignment implements a safe, controlled classroom demonstration on localhost (\texttt{127.0.0.1}) using Python 3, Flask, and the Requests library. A standard web browser serves as the legitimate client. During an experiment, client generators request an intentionally expensive endpoint (\texttt{/work}), saturating the server's worker pool. When a legitimate browser user attempts a health check (\texttt{/health}), the server returns HTTP 503 Service Unavailable. When traffic ceases, the server automatically recovers.
 
-\node[server] (target) at (7, 0) {\textbf{Controlled Test Server}\\\footnotesize 127.0.0.1:5000\\\footnotesize Finite Capacity ($C=4$, delay $=0.25\,\text{s}$)};
-
-\draw[arrow] (normal.east) -- node[above, font=\scriptsize] {Receives \& serves requests} (target.north west);
-\draw[arrow] (dos.east) -- node[above, font=\scriptsize] {Capacity becomes busy} (target.west);
-\draw[arrow] (ddos.east) -- node[below, font=\scriptsize] {All traffic on machine} (target.south west);
-
-\end{tikzpicture}
-\caption{Conceptual topology for the controlled application-layer simulation.}
-\end{figure}
-
-\section{Experimental Setup}
-\begin{itemize}[leftmargin=*]
-    \item \textbf{Environment:} PC Localhost (\texttt{127.0.0.1}).
-    \item \textbf{Software:} Python 3, Flask, Requests.
-    \item \textbf{Server Capacity:} Deliberately set to $C = 4$ concurrency slots using \texttt{threading.BoundedSemaphore(4)}.
-    \item \textbf{Processing Delay:} Artificial workload delay of $0.25\,\text{s}$ per request on the \texttt{/work} endpoint.
-    \item \textbf{Safety Boundary:} Bounded request limits ($20$ to $100$ requests) strictly confined to loopback interface \texttt{127.0.0.1}.
-\end{itemize}
-
-\section{Implementation}
-The experiment is organized into four core scripts:
+\subsection{Objectives}
+The primary objectives of this laboratory assignment are:
 \begin{enumerate}[leftmargin=*]
-    \item \textbf{\texttt{server.py}:} Deliberately capacity-limited dummy Flask server recording accepted and rejected request counts. Exposes \texttt{/}, \texttt{/work}, and \texttt{/stats}.
-    \item \textbf{\texttt{baseline.py}:} Sends 20 sequential requests with 0.15s delay to establish normal latency and 100\% success baseline.
-    \item \textbf{\texttt{client.py}:} Single-generator DoS simulation dispatching 80 rapid requests with minimal delay (0.01s).
-    \item \textbf{\texttt{ddos\_sim.py}:} Multi-source DDoS-style simulation spawning 4 independent worker processes sending 25 requests each (100 total concurrent requests).
+    \item Implement a multithreaded HTTP dummy server with deliberately constrained concurrency capacity.
+    \item Model finite resource exhaustion using a bounded semaphore ($C = 4$ worker slots) and simulated processing delay ($T_p = 0.25\,\text{s}$).
+    \item Implement a controlled single-source DoS traffic scenario.
+    \item Implement a simulated multi-process botnet cluster DDoS scenario.
+    \item Observe the visual impact in real-time from a legitimate web browser client.
+    \item Record quantitative metrics (request throughput, HTTP 200 vs. 503 counts, latency ranges).
+    \item Verify instantaneous system recovery after attack traffic ceases.
 \end{enumerate}
 
-\section{Results \& Measurements}
-The experiment was executed across the four defined stages:
+\section{DoS and DDoS Concepts}
+A Denial of Service (DoS) attack originates from a single logical source or IP address, creating sufficient concurrent traffic to exhaust the target's capacity. A Distributed Denial of Service (DDoS) attack leverages multiple coordinated sources (often termed a botnet), such that their aggregated traffic swamps capacity while circumventing simple single-IP rate-limiting thresholds.
 
 \begin{table}[H]
 \centering
 \small
-\caption{Experimental Measurement Results Across Stages}
-\begin{tabular}{lcccc}
+\caption{Conceptual comparison between the implemented DoS and DDoS scenarios}
+\label{tab:concepts}
+\begin{tabular}{p{3.2cm}p{5.5cm}p{5.5cm}}
 \toprule
-\textbf{Metric} & \textbf{Stage A: Baseline} & \textbf{Stage B: DoS} & \textbf{Stage C: DDoS Simulation} & \textbf{Stage D: Recovery} \\
+\textbf{Property} & \textbf{DoS Mode} & \textbf{DDoS Mode} \\
 \midrule
-\textbf{Total Requests}    & 20          & 80          & 100         & 15          \\
-\textbf{HTTP 200 (OK)}     & 20 (100\%)  & 22 (27.5\%) & 25 (25.0\%) & 15 (100\%)  \\
-\textbf{HTTP 503 (Busy)}   & 0 (0.0\%)   & 58 (72.5\%) & 75 (75.0\%) & 0 (0.0\%)   \\
-\textbf{Errors / Timeouts} & 0           & 0           & 0           & 0           \\
-\textbf{Average Latency}   & 264.4 ms    & 82.1 ms     & 93.0 ms     & 260.3 ms    \\
-\textbf{Observation}       & Normal service & Capacity busy & Multi-source contention & Immediate recovery \\
+\textbf{Logical Sources}      & One source & Four independent worker processes \\
+\textbf{Parallel Activity}    & Multiple rapid requests from single host & Concurrent multi-process bot cluster \\
+\textbf{Client Identity}      & \texttt{dos-source} & \texttt{bot-1} through \texttt{bot-4} \\
+\textbf{Main Idea}            & One client floods requests rapidly & Multiple distributed bots generate combined load \\
+\textbf{Visible Result}       & Server worker exhaustion $\to$ HTTP 503 & Faster saturation and higher HTTP 503 drop rate \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent\textbf{Observation Analysis:}
+\noindent\textbf{Local Simulation Boundary Note:} Because all components run on a single machine, the DDoS workers share the loopback IP \texttt{127.0.0.1}. They are simulated virtual bot entities created via separate Python \texttt{multiprocessing} processes. This demonstrates application-level distributed demand safely without creating dangerous network floods.
+
+\section{System Design}
+The laboratory testbed consists of four modular components:
+
+\begin{table}[H]
+\centering
+\small
+\caption{Components of the local availability testbed}
+\label{tab:components}
+\begin{tabular}{p{3.5cm}p{11cm}}
+\toprule
+\textbf{Component} & \textbf{Responsibility} \\
+\midrule
+\textbf{Flask Server (\texttt{server.py})} & Listens on \texttt{127.0.0.1:5000}, serves the website, processes \texttt{/health} and \texttt{/work} queries, bounds active worker slots, and returns HTTP 503 during overload. \\
+\textbf{Traffic Generator (\texttt{client.py})} & Executes single-source DoS traffic floods against \texttt{/work} with minimal inter-request delay. \\
+\textbf{DDoS Cluster (\texttt{ddos\_sim.py})} & Spawns independent multiprocessing bot processes to simulate multi-source distributed load. \\
+\textbf{Interactive Browser Page} & Represents the legitimate user; provides a ``Check Server'' button to probe \texttt{/health} and display live status (\texttt{SERVER ONLINE} / \texttt{SERVER OVERLOADED}). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Endpoint Separation Logic}
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Baseline:} All requests succeeded (100\% HTTP 200) with average latency reflecting the 250ms processing delay.
-    \item \textbf{DoS Simulation:} Increased arrival rate from the generator exceeded available slots, causing 503 Busy responses for excess requests.
-    \item \textbf{DDoS Simulation:} Four independent concurrent workers saturated the semaphore slots simultaneously, producing high 503 rejection rates.
-    \item \textbf{Recovery:} Immediately after stopping the attack traffic, standard requests achieved 100\% success rate with normal latency.
+    \item \textbf{\texttt{GET /}}: Serves the interactive user dashboard.
+    \item \textbf{\texttt{GET /health}}: Lightweight probe for legitimate users. Checks slot availability and returns immediately ($<10\,\text{ms}$).
+    \item \textbf{\texttt{GET /work}}: Resource-heavy endpoint for attack simulation. Simulates expensive computation ($0.25\,\text{s}$ delay), occupying a semaphore slot.
+    \item \textbf{\texttt{GET /stats}}: Exposes accepted, rejected, and active counter metrics in JSON format.
 \end{itemize}
 
-\section{Comparison: DoS vs. DDoS}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rectangle, rounded corners, fill=blue!10, minimum height=1cm, minimum width=3cm, align=center, font=\small},
+    server/.style={draw, rectangle, rounded corners, fill=green!15, minimum height=1.3cm, minimum width=3.8cm, align=center, font=\small\bfseries},
+    arrow/.style={-{Stealth[length=3mm]}, thick}
+]
+
+\node[box] (normal) at (0, 2.2) {\textbf{Legitimate Browser}\\\footnotesize Probes \texttt{/health}};
+\node[box, fill=orange!15] (dos) at (0, 0) {\textbf{DoS Generator}\\\footnotesize Floods \texttt{/work}};
+\node[box, fill=red!15] (ddos) at (0, -2.2) {\textbf{DDoS Bot Cluster}\\\footnotesize Concurrent \texttt{/work}};
+
+\node[server] (target) at (7.5, 0) {\textbf{Target Server (127.0.0.1:5000)}\\\footnotesize Capacity: $C=4$ active workers\\\footnotesize Delay: $T_p = 0.25\,\text{s}$};
+
+\draw[arrow, color=blue!80!black] (normal.east) -- node[above, font=\scriptsize] {200 OK (when available)} (target.north west);
+\draw[arrow, color=orange!80!black] (dos.east) -- node[above, font=\scriptsize] {Saturates slots} (target.west);
+\draw[arrow, color=red!80!black] (ddos.east) -- node[below, font=\scriptsize] {503 Overload (when full)} (target.south west);
+
+\end{tikzpicture}
+\caption{System architecture and request flow during controlled availability simulation.}
+\end{figure}
+
+\section{Server Implementation}
+
+\subsection{Socket Setup and Local Binding}
+The server is constructed using Python's Flask WSGI framework. To guarantee complete safety, the server explicitly binds only to the IPv4 loopback address \texttt{127.0.0.1} on port \texttt{5000}. This prevents any inbound connections from external devices on the physical local area network.
+
+\subsection{Worker Reservation and Overload Handling}
+Concurrency control is implemented using \texttt{threading.BoundedSemaphore(4)}. When a request arrives at \texttt{/work} or \texttt{/health}, the server executes a non-blocking acquisition attempt:
+
+\begin{lstlisting}[language=Python, caption={Thread-safe non-blocking worker slot acquisition}]
+slots = threading.BoundedSemaphore(4)
+stats = {"accepted": 0, "rejected": 0}
+lock = threading.Lock()
+
+@app.get("/work")
+def work():
+    # Attempt non-blocking slot reservation
+    acquired = slots.acquire(blocking=False)
+    if not acquired:
+        with lock:
+            stats["rejected"] += 1
+        return jsonify({
+            "status": "busy",
+            "message": "Server capacity is currently full"
+        }), 503
+
+    try:
+        time.sleep(0.25)  # Simulated expensive workload
+        with lock:
+            stats["accepted"] += 1
+        return jsonify({"status": "ok", "message": "Request processed"}), 200
+    finally:
+        slots.release()
+\end{lstlisting}
+
+If all 4 slots are busy, the request is immediately rejected with HTTP 503 Service Unavailable without hanging the thread or causing process termination.
+
+\section{Traffic Generator Implementation}
+
+\subsection{Single-Source DoS Simulation (\texttt{client.py})}
+The single-source DoS client dispatches a batch of 80 requests in rapid succession with a minimal 0.01s interval. Because each accepted request occupies a worker slot for 0.25s, the arrival rate substantially exceeds the server's processing rate, causing subsequent requests to be rejected.
+
+\subsection{Multi-Bot DDoS Simulation (\texttt{ddos\_sim.py})}
+The DDoS simulator utilizes Python's \texttt{multiprocessing.Pool(4)} to spawn four concurrent worker processes representing distributed bots. Each bot sends 25 requests to \texttt{/work}, generating 100 aggregate requests hitting the server simultaneously.
+
+\section{Legitimate Browser Client}
+The interactive website provides a real-time health indicator. When the user clicks \textbf{Check Server}, an asynchronous JavaScript \texttt{fetch('/health')} probe is executed:
 \begin{itemize}[leftmargin=*]
-    \item \textbf{DoS:} Single request-generation source. Demonstrates the basic principle of overloading a server from one origin.
-    \item \textbf{DDoS:} Multiple independent worker processes simulating distributed sources. In this experiment, the DDoS part is simulated locally rather than performed against an external target.
+    \item \textbf{\texttt{SERVER ONLINE}:} Rendered in green with HTTP 200 OK and response latency in milliseconds.
+    \item \textbf{\texttt{SERVER OVERLOADED}:} Rendered in red with HTTP 503 Service Unavailable when the worker pool is saturated.
+    \item \textbf{\texttt{SERVER UNAVAILABLE}:} Rendered when connection errors or network timeouts occur.
 \end{itemize}
 
-\section{Defensive Measures}
+\section{Build and Execution Procedure}
+The entire experiment is self-contained and reproducible using standard Python tools:
+\begin{enumerate}[leftmargin=*]
+    \item Open a terminal and navigate to the project directory: \texttt{cd code}
+    \item Install required packages: \texttt{pip install -r requirements.txt}
+    \item Launch the target web server: \texttt{python server.py}
+    \item Open \texttt{http://127.0.0.1:5000/} in any web browser and click \textbf{Check Server} to verify normal baseline operation.
+    \item In a second terminal, execute the baseline test: \texttt{python baseline.py}
+    \item Start the DoS traffic generator: \texttt{python client.py}
+    \item During the attack, click \textbf{Check Server} in the browser and observe the HTTP 503 \texttt{SERVER OVERLOADED} status.
+    \item Run the DDoS cluster simulation: \texttt{python ddos\_sim.py}
+    \item Once traffic ceases, click \textbf{Check Server} again to verify instantaneous recovery.
+\end{enumerate}
+
+\newpage
+\section{Demonstration and Screenshots}
+
+\subsection{Normal State}
+Before attack traffic begins, the website loads instantaneously and worker capacity is completely free. Legitimate health checks succeed with HTTP 200 OK.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig1_browser_normal.png}
+\caption{Legitimate browser client in normal state (\texttt{SERVER ONLINE}, HTTP 200 OK, latency: 5 ms).}
+\label{fig:normal}
+\end{figure}
+
+\subsection{Single-Source DoS Run}
+Figure~\ref{fig:dos_term} shows the terminal output during the 80-request single-source DoS run. As concurrency slots saturate, the server returns HTTP 503 for 58 out of 80 requests (72.5\% rejection rate).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig2_dos_terminal.png}
+\caption{Single-source DoS client terminal output (\texttt{client.py}) demonstrating capacity exhaustion.}
+\label{fig:dos_term}
+\end{figure}
+
+\subsection{Legitimate User During Overload}
+Figure~\ref{fig:overloaded} depicts the browser UI when the legitimate user clicks \textbf{Check Server} during an active DoS/DDoS attack. The server returns HTTP 503 and switches the UI to \texttt{SERVER OVERLOADED}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig3_browser_overloaded.png}
+\caption{Legitimate user receives HTTP 503 \texttt{SERVER OVERLOADED} during active attack traffic.}
+\label{fig:overloaded}
+\end{figure}
+
+\subsection{Multi-Bot DDoS Run}
+Figure~\ref{fig:ddos_term} shows the multi-process DDoS simulation output (\texttt{ddos\_sim.py}). Four concurrent bot processes generated 100 requests in aggregate, yielding 75 HTTP 503 rejections (75.0\% drop rate).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig4_ddos_terminal.png}
+\caption{DDoS bot cluster terminal output (\texttt{ddos\_sim.py}) displaying per-worker and total metrics.}
+\label{fig:ddos_term}
+\end{figure}
+
+\subsection{Server Saturation and Recovery}
+Figure~\ref{fig:server_term} illustrates the server log stream transitioning from healthy operation, through overload rejections, to complete recovery once traffic terminates. Figure~\ref{fig:recovered} shows the browser returning to \texttt{SERVER ONLINE}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig5_server_terminal.png}
+\caption{Target Flask server terminal output showing real-time load spike, 503 responses, and recovery.}
+\label{fig:server_term}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{fig6_browser_recovered.png}
+\caption{Legitimate browser client verifying restored service availability (\texttt{SERVER ONLINE}) after attack cessation.}
+\label{fig:recovered}
+\end{figure}
+
+\newpage
+\section{Results and Discussion}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Comprehensive quantitative results across all experimental stages}
+\label{tab:results}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Metric} & \textbf{Stage A: Baseline} & \textbf{Stage B: DoS} & \textbf{Stage C: DDoS} & \textbf{Stage D: Recovery} \\
+\midrule
+\textbf{Logical Sources}         & 1 client    & 1 generator  & 4 bot workers & 1 client    \\
+\textbf{Total Requests Sent}     & 20          & 80           & 100           & 15          \\
+\textbf{HTTP 200 (Success)}      & 20 (100\%)  & 22 (27.5\%)  & 25 (25.0\%)   & 15 (100\%)  \\
+\textbf{HTTP 503 (Overload)}     & 0 (0.0\%)   & 58 (72.5\%)  & 75 (75.0\%)   & 0 (0.0\%)   \\
+\textbf{Connection / Socket Errors}& 0         & 0            & 0             & 0           \\
+\textbf{Average Latency (ms)}    & 264.4 ms    & 82.1 ms      & 93.0 ms       & 260.3 ms    \\
+\textbf{Legitimate Browser State}& \texttt{ONLINE} & \texttt{OVERLOADED} & \texttt{OVERLOADED} & \texttt{ONLINE} \\
+\textbf{System Health}           & Optimal     & Severe DoS   & Severe DDoS   & Fully Restored \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Rate Limiting:} Restrict how many requests a client IP can make in a specified time window.
-    \item \textbf{Connection/Worker Limits:} Prevent one source or burst from consuming every server worker thread.
-    \item \textbf{Caching:} Serve repeated/static content without doing expensive backend computation each time.
-    \item \textbf{Load Balancing:} Distribute legitimate traffic across multiple backend servers.
-    \item \textbf{WAF / CDN / DDoS Protection:} Filter abnormal traffic upstream and absorb large traffic volumes.
-    \item \textbf{Monitoring:} Watch request rate, latency, error rate, CPU, memory, and network usage.
+    \item \textbf{Baseline Performance:} Under normal conditions, request rate is low ($\lambda \le \mu$). Every request acquires a semaphore slot immediately, resulting in 100\% HTTP 200 responses with an average response time of $264.4\,\text{ms}$ ($250\,\text{ms}$ delay + OS overhead).
+    \item \textbf{Resource Exhaustion in DoS/DDoS:} When attack generators flood \texttt{/work}, all 4 slots are occupied continuously. Any incoming request (including the legitimate browser's \texttt{/health} check) cannot acquire a slot and receives an explicit HTTP 503 response. Rejected requests complete in $<12\,\text{ms}$ because no sleep delay is executed.
+    \item \textbf{Zero Connection Failures:} The server cleanly returns HTTP 503 instead of dropping TCP connections or crashing, demonstrating graceful degradation under overload.
+    \item \textbf{Instant Recovery:} Once the attack scripts terminate, active worker slots drain within $0.25\,\text{s}$, immediately restoring 100\% availability to legitimate browser users.
 \end{itemize}
 
-\section{Ethical \& Safety Note}
-The experiment was restricted to a self-owned localhost target (\texttt{127.0.0.1}) and bounded request counts. No public service or third-party system was targeted. No harmful lower-layer techniques (SYN flooding, UDP flooding, amplification, spoofing, botnet control) were used.
+\section{Defensive Countermeasures}
+To protect production systems against real-world DoS and DDoS floods:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Token-Bucket Rate Limiting:} Restrict maximum request counts per IP address over time windows.
+    \item \textbf{Reverse Proxy Connection Limits:} Use Nginx (\texttt{limit\_conn}, \texttt{limit\_req}) to buffer slow clients and throttle bursts.
+    \item \textbf{In-Memory Caching (Redis/Memcached):} Serve repeated static and dynamic responses directly from memory to prevent expensive database or CPU computations.
+    \item \textbf{Elastic Load Balancing \& Autoscaling:} Distribute inbound traffic across server pools and dynamically spin up additional instances during traffic surges.
+    \item \textbf{Anycast CDN \& WAF Scrubbing (Cloudflare/AWS Shield):} Absorb volumetric DDoS floods at global edge nodes and filter malicious request signatures upstream.
+\end{enumerate}
 
 \section{Conclusion}
-Increased concurrent request pressure caused requests to encounter the intentionally limited server capacity, demonstrating the availability problem that DoS and DDoS attacks exploit. When the attack ceased, the server recovered immediately, proving the importance of rate limiting and capacity management in production systems.
+This laboratory coursework successfully designed, implemented, and evaluated an application-layer DoS and DDoS availability simulation in Python. Bounded semaphore accounting limited the server to 4 concurrent worker slots, delivering explicit HTTP 503 responses when capacity was exceeded. Both single-source and distributed multi-bot attacks caused visible denial of service to a legitimate browser user. The experiment demonstrated the mechanics of availability loss under controlled, safe localhost conditions and verified immediate post-attack recovery.
 
 \newpage
 \appendix
-\section{Viva Preparation (Questions \& Answers)}
+\section{Viva Voce Examination Preparation Guide}
 
 \begin{enumerate}[leftmargin=*]
     \item \textbf{What is the difference between DoS and DDoS?} \\
-    \textit{Ans:} DoS comes from a single source; DDoS comes from multiple distributed sources, making IP-based mitigation harder.
-    
+    \textit{Ans:} A DoS attack originates from a single source/IP address; a DDoS attack originates from multiple distributed sources (e.g., botnets), making origin-based blocking much more challenging.
+
     \item \textbf{Why does server capacity matter?} \\
-    \textit{Ans:} Server resources (threads, memory, CPU) are finite. When arrival rate exceeds capacity, queues saturate and requests are rejected.
-    
+    \textit{Ans:} Server computational resources (worker threads, memory, CPU) are finite. When the arrival rate exceeds capacity ($\lambda > \mu$), queues overflow and excess requests are rejected.
+
     \item \textbf{Why did we measure a baseline first?} \\
-    \textit{Ans:} To establish normal performance under healthy conditions for accurate before/after comparison.
-    
+    \textit{Ans:} To establish normal operating performance under healthy conditions (100\% success rate), providing a control benchmark for comparison.
+
     \item \textbf{What does HTTP 503 mean in this experiment?} \\
-    \textit{Ans:} It indicates the server's capacity semaphore was fully occupied, so the server rejected the excess request safely.
-    
-    \item \textbf{Why is our localhost DDoS only a simulation?} \\
-    \textit{Ans:} Real DDoS attacks originate from distributed internet hosts; here, separate local processes simulate multiple sources safely on localhost.
-    
-    \item \textbf{What resources can a real DoS/DDoS exhaust?} \\
-    \textit{Ans:} Network bandwidth, socket handles, CPU, memory, database connections, and worker threads.
-    
-    \item \textbf{How can a server defend against request floods?} \\
-    \textit{Ans:} Using rate limiting, reverse proxies, caching, load balancing, autoscaling, and WAF/CDN scrubbers.
-    
-    \item \textbf{Why should an experiment be restricted to systems you own or have permission to test?} \\
-    \textit{Ans:} Testing unauthorized systems is illegal, unethical, and disruptive. Localhost ensures total safety.
+    \textit{Ans:} HTTP 503 Service Unavailable indicates that all 4 concurrency slots were occupied, so the server deliberately rejected the excess request to prevent system failure.
+
+    \item \textbf{Why is our localhost DDoS considered an educational simulation?} \\
+    \textit{Ans:} Real DDoS attacks originate from distributed internet hosts across distinct public IPs. In this lab, separate local OS processes simulate distributed sources safely on localhost.
+
+    \item \textbf{What resources can a real DoS/DDoS attack exhaust?} \\
+    \textit{Ans:} Network bandwidth, socket tables, TCP connection states, CPU time, memory buffers, and database connection pools.
+
+    \item \textbf{How can an enterprise web server defend against request floods?} \\
+    \textit{Ans:} By employing rate limiting, reverse-proxy connection throttling, in-memory caching, load balancing, Anycast CDNs, and WAF traffic scrubbing.
+
+    \item \textbf{Why must testing be restricted to systems you own or have permission to test?} \\
+    \textit{Ans:} Launching unauthorized attacks against external systems is illegal, unethical, and disruptive. Localhost testing ensures total safety while demonstrating key concepts.
 \end{enumerate}
 
-\section{Source Code Listings}
+\section{Project Source Code Listings}
 
-\subsection{\texttt{server.py}}
+\subsection{Target Web Server (\texttt{code/server.py})}
 \begin{lstlisting}[language=Python]
-from flask import Flask, jsonify
-import threading
-import time
+from flask import Flask, jsonify, render_template_string
+import threading, time
 
 app = Flask(__name__)
 CAPACITY = 4
 PROCESSING_TIME = 0.25
 
 slots = threading.BoundedSemaphore(CAPACITY)
-stats = {"accepted": 0, "rejected": 0}
+stats = {"accepted": 0, "rejected": 0, "health_checks": 0}
 lock = threading.Lock()
+
+@app.get("/health")
+def health():
+    acquired = slots.acquire(blocking=False)
+    if not acquired:
+        with lock: stats["rejected"] += 1
+        return jsonify({"status": "busy", "message": "Server capacity full"}), 503
+    try:
+        with lock: stats["health_checks"] += 1
+        return jsonify({"status": "ok", "message": "Server is healthy"}), 200
+    finally:
+        slots.release()
 
 @app.get("/work")
 def work():
     acquired = slots.acquire(blocking=False)
     if not acquired:
-        with lock:
-            stats["rejected"] += 1
-        return jsonify({"status": "busy", "message": "Server capacity is currently full"}), 503
+        with lock: stats["rejected"] += 1
+        return jsonify({"status": "busy", "message": "Server capacity full"}), 503
     try:
         time.sleep(PROCESSING_TIME)
-        with lock:
-            stats["accepted"] += 1
+        with lock: stats["accepted"] += 1
         return jsonify({"status": "ok", "message": "Request processed"}), 200
     finally:
         slots.release()
 
-@app.get("/stats")
-def get_stats():
-    with lock:
-        return jsonify(stats)
-
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, threaded=True)
-\end{lstlisting}
-
-\subsection{\texttt{baseline.py}}
-\begin{lstlisting}[language=Python]
-import time
-import requests
-
-URL = "http://127.0.0.1:5000/work"
-TOTAL = 20
-latencies = []
-success = failed = 0
-
-for i in range(TOTAL):
-    start = time.perf_counter()
-    try:
-        r = requests.get(URL, timeout=3)
-        elapsed = (time.perf_counter() - start) * 1000
-        latencies.append(elapsed)
-        if r.status_code == 200: success += 1
-        else: failed += 1
-    except requests.RequestException:
-        failed += 1
-    time.sleep(0.15)
 \end{lstlisting}
 
 \end{document}
